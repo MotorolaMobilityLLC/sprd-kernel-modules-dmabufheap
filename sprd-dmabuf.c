@@ -59,6 +59,21 @@ struct system_heap_buffer {
 	bool uncached;
 };
 
+struct cma_heap_buffer {
+	struct cma_heap *heap;
+	struct list_head attachments;
+	struct mutex lock;
+	unsigned long len;
+	struct sg_table sg_table;
+	struct page *cma_pages;
+	struct page **pages;
+	pgoff_t pagecount;
+	int vmap_cnt;
+	void *vaddr;
+
+	bool uncached;
+};
+
 struct carveout_heap_buffer {
 	struct dma_heap *heap;
 	struct list_head attachments;
@@ -99,6 +114,10 @@ struct dma_heap_attachment {
 };
 
 struct dmabuf_device {
+	struct miscdevice dev;
+};
+
+struct cma_device {
 	struct miscdevice dev;
 };
 
@@ -903,6 +922,31 @@ static struct carveout_heap_buffer *get_dmabuf_carvebuffer(int fd, struct dma_bu
 		return buffer;
 }
 
+static struct cma_heap_buffer *get_dmabuf_cmabuffer(int fd, struct dma_buf *dmabuf)
+{
+	struct cma_heap_buffer *buffer;
+
+	if (fd < 0 && !dmabuf) {
+		pr_err("%s, input fd: %d, dmabuf: %p error\n", __func__, fd, dmabuf);
+		return ERR_PTR(-EINVAL);
+		}
+
+		if (fd >= 0) {
+			dmabuf = dma_buf_get(fd);
+			if (IS_ERR_OR_NULL(dmabuf)) {
+				pr_err("%s, dmabuf=%p dma_buf_get error!\n", __func__,
+					   dmabuf);
+				return ERR_PTR(-EBADF);
+			}
+			buffer = dmabuf->priv;
+			dma_buf_put(dmabuf);
+		} else {
+			buffer = dmabuf->priv;
+		}
+
+		return buffer;
+}
+
 int sprd_dmabuf_get_carvebuffer(int fd, struct dma_buf *dmabuf, void **buf, size_t *size)
 {
 	struct carveout_heap_buffer *buffer;
@@ -946,6 +990,36 @@ int sprd_dmabuf_get_phys_addr(int fd, struct dma_buf *dmabuf, unsigned long *phy
 	return ret;
 }
 EXPORT_SYMBOL(sprd_dmabuf_get_phys_addr);
+
+int sprd_cma_get_phys_addr(int fd, struct dma_buf *dmabuf, unsigned long *phys_addr, size_t *size)
+{
+	int ret = 0;
+	struct cma_heap_buffer *buffer;
+	struct sg_table *table = NULL;
+	struct scatterlist *sgl = NULL;
+
+	buffer = get_dmabuf_cmabuffer(fd, dmabuf);
+	if (IS_ERR(buffer))
+		return PTR_ERR(buffer);
+
+	table = &buffer->sg_table;
+	if (table && table->sgl) {
+		sgl = table->sgl;
+	} else {
+		if (!table)
+			pr_err("invalid table\n");
+		else if (!table->sgl)
+			pr_err("invalid table->sgl\n");
+		return -EINVAL;
+	}
+
+	*phys_addr = sg_phys(sgl);
+	*size = buffer->len;
+
+	pr_debug("%s, cma get phys addr phys_addr: %lu, size: %zu\n", __func__, *phys_addr, *size);
+	return ret;
+}
+EXPORT_SYMBOL(sprd_cma_get_phys_addr);
 
 int sprd_dmabuf_map_kernel(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
@@ -1012,10 +1086,54 @@ static long sprd_dmabuf_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	return ret;
 }
 
+static long sprd_cma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	int ret = 0;
+	struct dmabuf_phy_data data;
+
+	if (_IOC_SIZE(cmd) > sizeof(data))
+		return -EINVAL;
+	/*
+	 * The copy_from_user is unconditional here for both read and write
+	 * to do the validate. If there is no write for the ioctl, the
+	 * buffer is cleared
+	 */
+	if (copy_from_user(&data, (void __user *)arg, _IOC_SIZE(cmd)))
+		return -EFAULT;
+
+	if (!(_IOC_DIR(cmd) & _IOC_WRITE))
+		memset(&data, 0, sizeof(data));
+
+	switch (cmd) {
+	case DMABUF_IOC_PHY:
+	{
+		int fd = data.fd;
+
+		ret = sprd_cma_get_phys_addr(fd, NULL, (unsigned long *)&data.addr,
+				(size_t *)&data.len);
+		break;
+	}
+	default:
+		return -ENOTTY;
+	}
+
+	if (_IOC_DIR(cmd) & _IOC_READ) {
+		if (copy_to_user((void __user *)arg, &data, _IOC_SIZE(cmd)))
+			return -EFAULT;
+	}
+	return ret;
+}
+
 static const struct file_operations sprd_dmabuf_fops = {
 		.owner          = THIS_MODULE,
 		.unlocked_ioctl = sprd_dmabuf_ioctl,
 		.compat_ioctl = sprd_dmabuf_ioctl,
+};
+
+static const struct file_operations sprd_cma_fops = {
+		.owner          = THIS_MODULE,
+		.unlocked_ioctl = sprd_cma_ioctl,
+		.compat_ioctl = sprd_cma_ioctl,
 };
 
 static int sprd_dmabuf_device_create(void)
@@ -1041,6 +1159,32 @@ static int sprd_dmabuf_device_create(void)
 
 err_reg:
 	kfree(sprd_dmabuf_dev);
+	return ret;
+}
+
+static int sprd_cma_device_create(void)
+{
+	struct cma_device *sprd_cma_dev;
+	int ret;
+
+	sprd_cma_dev = kzalloc(sizeof(*sprd_cma_dev), GFP_KERNEL);
+	if (!sprd_cma_dev)
+		return -ENOMEM;
+
+	sprd_cma_dev->dev.minor = MISC_DYNAMIC_MINOR;
+	sprd_cma_dev->dev.name = "sprd_cma";
+	sprd_cma_dev->dev.fops = &sprd_cma_fops;
+	sprd_cma_dev->dev.parent = NULL;
+	ret = misc_register(&sprd_cma_dev->dev);
+	if (ret) {
+		pr_err("sprd_cma: failed to register misc device.\n");
+		goto err_reg;
+	}
+
+	return 0;
+
+err_reg:
+	kfree(sprd_cma_dev);
 	return ret;
 }
 
@@ -1163,6 +1307,10 @@ static int sprd_dmabuf_probe(struct platform_device *pdev)
 	internal_dev = carvedev;
 #endif
 
+	ret = sprd_cma_device_create();
+	if (ret)
+		pr_err("%s, dev/sprd_cma, create fail!\n", __func__);
+
 	dmabuf_heaps = sprd_dmabuf_parse_dt(pdev);
 	if (IS_ERR(dmabuf_heaps)) {
 		pr_err("%s: parse dt failed with err %ld\n", __func__, PTR_ERR(dmabuf_heaps));
@@ -1188,6 +1336,7 @@ static int sprd_dmabuf_probe(struct platform_device *pdev)
 
 	if (dmabuf_heaps)
 		goto out;
+
 
 out:
 	kfree(dmabuf_heaps);
