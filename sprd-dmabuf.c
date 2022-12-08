@@ -506,6 +506,9 @@ static void carveout_heap_dma_buf_release(struct dma_buf *dmabuf)
 	struct dma_heap *heap = buffer->heap;
 	struct page *page = sg_page(table->sgl);
 	phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
+	struct task_struct *task = current->group_leader;
+	pid_t pid = task_pid_nr(task);
+	char task_name[16];
 
 #ifdef CONFIG_E_SHOW_MEM
 	struct carveout_device *dev = internal_dev;
@@ -521,9 +524,9 @@ static void carveout_heap_dma_buf_release(struct dma_buf *dmabuf)
 	sg_free_table(table);
 	kfree(table);
 	kfree(buffer);
-	pr_debug("%s: heap name: %s, paddr: 0x%llx, len: %lu\n",
-			__func__, dma_heap_get_name(heap), (u64)paddr, buffer->len);
-
+	get_task_comm(task_name, current->group_leader);
+	pr_info("%s: pid: %d, task: %s, heap name: %s, paddr: 0x%llx, len: %lu\n",
+			__func__, pid, task_name, dma_heap_get_name(heap), (u64)paddr, buffer->len);
 }
 
 static const struct dma_buf_ops carveout_heap_buf_ops = {
@@ -658,6 +661,9 @@ static struct dma_buf *carveout_heap_do_allocate(struct dma_heap *heap, unsigned
 	size_t size = PAGE_ALIGN(len);
 	unsigned int align = get_order(size);
 	phys_addr_t paddr;
+	struct task_struct *task = current->group_leader;
+	pid_t pid = task_pid_nr(task);
+	char task_name[16];
 	int ret;
 #ifdef CONFIG_E_SHOW_MEM
 	struct carveout_device *dev = internal_dev;
@@ -688,8 +694,9 @@ static struct dma_buf *carveout_heap_do_allocate(struct dma_heap *heap, unsigned
 		ret = -ENOMEM;
 		goto err_free_table;
 	}
-	pr_info("%s: heap name: %s, paddr: 0x%llx, size: %lu\n",
-		__func__, dma_heap_get_name(heap), (u64)paddr, size);
+	get_task_comm(task_name, current->group_leader);
+	pr_info("%s: pid: %d, task: %s, heap name: %s, paddr: 0x%llx, size: %lu\n",
+		__func__, pid, task_name, dma_heap_get_name(heap), (u64)paddr, size);
 	sg_set_page(table->sgl, pfn_to_page(PFN_DOWN(paddr)), size, 0);
 	buffer->sg_table = table;
 
