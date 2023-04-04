@@ -1,12 +1,5 @@
-#
-# sprd-dmabuf.ko
-#
-# Kbuild: for kernel building external module
-#
-# Note:
-# - Please refer to modules/sample/Kbuild to find out what should be
-#   done is this Kbuild file
-#
+#SPDX-FileCopyrightText: 2019 Unisoc (Shanghai) Technologies Co.Ltd
+#SPDX-License-Identifier: GPL-2.0-only
 
 #
 # Source List
