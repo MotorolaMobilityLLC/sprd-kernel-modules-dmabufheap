@@ -569,7 +569,6 @@ int dmabuf_debug_carveheap_show_printk(void)
 
 	struct tm t;
 
-	pr_info("Heap: \n", dma_heap_get_name(carve_heap));
 	pr_info("Detail:\n");
 	pr_info("%-10s %-6s %-16s %-10s\n", "size", "pid", "name", "alloc_ts");
 
