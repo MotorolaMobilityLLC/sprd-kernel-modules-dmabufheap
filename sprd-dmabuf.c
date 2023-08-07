@@ -652,7 +652,6 @@ static struct dma_buf *carveout_heap_do_allocate(struct dma_heap *heap, unsigned
 	struct dma_buf *dmabuf;
 	struct sg_table *table;
 	size_t size = PAGE_ALIGN(len);
-	unsigned int align = get_order(size);
 	phys_addr_t paddr;
 	int ret;
 #ifdef CONFIG_E_SHOW_MEM
@@ -671,8 +670,11 @@ static struct dma_buf *carveout_heap_do_allocate(struct dma_heap *heap, unsigned
 	buffer->uncached = uncached;
 
 	table = kmalloc(sizeof(*table), GFP_KERNEL);
-	if (!table)
+	if (!table) {
+		kfree(buffer);
 		return ERR_PTR(-ENOMEM);
+	}
+
 	ret = sg_alloc_table(table, 1, GFP_KERNEL);
 	if (ret)
 		goto err_free;
@@ -726,7 +728,7 @@ static struct dma_buf *carveout_heap_do_allocate(struct dma_heap *heap, unsigned
 	return dmabuf;
 
 free_pages:
-	__free_pages(pfn_to_page(PFN_DOWN(paddr)), align);
+	carveout_free(heap, paddr, size);
 err_free_table:
 	sg_free_table(table);
 err_free:
