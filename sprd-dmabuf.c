@@ -125,11 +125,14 @@ static struct sg_table *dup_sg_table(struct sg_table *table)
 	struct scatterlist *sg, *new_sg;
 
 	new_table = kzalloc(sizeof(*new_table), GFP_KERNEL);
-	if (!new_table)
+	if (!new_table) {
+		pr_err("%s sg_table kzalloc failed\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	ret = sg_alloc_table(new_table, table->orig_nents, GFP_KERNEL);
 	if (ret) {
+		pr_err("%s alloc and initialize sg_table failed\n", __func__);
 		kfree(new_table);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -201,8 +204,10 @@ static struct sg_table *carveout_heap_map_dma_buf(struct dma_buf_attachment *att
 		attr = DMA_ATTR_SKIP_CPU_SYNC;
 
 	ret = dma_map_sgtable(attachment->dev, table, direction, attr);
-	if (ret)
+	if (ret) {
+		pr_err("%s dma map sg_table failed ret = %d\n", __func__, ret);
 		return ERR_PTR(ret);
+	}
 
 	a->mapped = true;
 	return table;
@@ -360,8 +365,10 @@ static void *carveout_heap_do_vmap(struct carveout_heap_buffer *buffer)
 	pgprot_t pgprot = PAGE_KERNEL;
 	void *vaddr;
 
-	if (!pages)
+	if (!pages) {
+		pr_err("%s pages alloc failed\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	if (buffer->uncached)
 		pgprot = pgprot_writecombine(PAGE_KERNEL);
@@ -374,8 +381,10 @@ static void *carveout_heap_do_vmap(struct carveout_heap_buffer *buffer)
 	vaddr = vmap(pages, npages, VM_MAP, pgprot);
 	vfree(pages);
 
-	if (!vaddr)
+	if (!vaddr) {
+		pr_err("%s map pages into vaddr failed\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	return vaddr;
 }
@@ -665,8 +674,10 @@ static struct dma_buf *carveout_heap_do_allocate(struct dma_heap *heap, unsigned
 #endif
 
 	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
-	if (!buffer)
+	if (!buffer) {
+		pr_err("%s buffer alloc failed\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	INIT_LIST_HEAD(&buffer->attachments);
 	mutex_init(&buffer->lock);
@@ -1214,8 +1225,10 @@ static struct dmabuf_platform_heap *sprd_dmabuf_parse_dt(struct platform_device 
 
 	dmabuf_heaps = kcalloc(num_heaps, sizeof(struct dmabuf_platform_heap),
 			GFP_KERNEL);
-	if (!dmabuf_heaps)
+	if (!dmabuf_heaps) {
+		pr_err("%s dmabuf heaps alloc failed\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 	for_each_child_of_node(parent, child) {
 		new_dev = of_platform_device_create(child, NULL, &pdev->dev);
 		if (!new_dev) {
