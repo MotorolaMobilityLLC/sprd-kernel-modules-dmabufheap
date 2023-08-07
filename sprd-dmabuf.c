@@ -489,10 +489,14 @@ static void carveout_free(struct dma_heap *heap, phys_addr_t addr, unsigned long
 
 	if (!strcmp(heap_name, "uncached_carveout_mm"))
 		free_pool = carve_mm_pool;
-	if (!strcmp(heap_name, "carveout_fd"))
+	else if (!strcmp(heap_name, "carveout_fd"))
 		free_pool = carve_fd_pool;
-	if (!strcmp(heap_name, "uncached_carveout_oem"))
+	else if (!strcmp(heap_name, "uncached_carveout_oem"))
 		free_pool = carve_oem_pool;
+	else {
+		pr_err("%s: unsupported heap %s\n", __func__, heap_name);
+		return;
+	}
 
 	if (addr == DMABUF_CARVEOUT_ALLOCATE_FAIL)
 		return;
@@ -545,10 +549,14 @@ static phys_addr_t dmabuf_carveout_allocate(struct dma_heap *heap, unsigned long
 
 	if (!strcmp(heap_name, "uncached_carveout_mm"))
 		alloc_pool = carve_mm_pool;
-	if (!strcmp(heap_name, "carveout_fd"))
+	else if (!strcmp(heap_name, "carveout_fd"))
 		alloc_pool = carve_fd_pool;
-	if (!strcmp(heap_name, "uncached_carveout_oem"))
+	else if (!strcmp(heap_name, "uncached_carveout_oem"))
 		alloc_pool = carve_oem_pool;
+	else {
+		pr_err("%s: unsupported heap %s\n", __func__, heap_name);
+		return DMABUF_CARVEOUT_ALLOCATE_FAIL;
+	}
 
 	offset = gen_pool_alloc(alloc_pool, size);
 
@@ -1296,10 +1304,9 @@ static int sprd_dmabuf_probe(struct platform_device *pdev)
 	struct carveout_device *carvedev;
 
 	carvedev = kzalloc(sizeof(*carvedev), GFP_KERNEL);
-	if (!carvedev) {
-		kfree(carvedev);
+	if (!carvedev)
 		return -ENOMEM;
-	}
+
 	carvedev->buffers = RB_ROOT;
 	mutex_init(&carvedev->buffer_lock);
 	internal_dev = carvedev;
