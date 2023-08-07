@@ -36,10 +36,8 @@ static int num_heaps;
 static struct dma_heap *carve_heap;
 static struct gen_pool *carve_mm_pool, *carve_fd_pool, *carve_oem_pool;
 static struct dma_heap *carve_uncached_heap;
-//static struct dma_heap **heaps;
 
 struct dmabuf_platform_heap {
-
 	const char *name;
 	phys_addr_t base;
 	size_t size;
@@ -80,7 +78,6 @@ struct carveout_heap_buffer {
 	struct mutex lock;
 	unsigned long len;
 	struct sg_table *sg_table;
-	//struct gen_pool *pool;
 	phys_addr_t base;
 	int vmap_cnt;
 	void *vaddr;
@@ -500,6 +497,7 @@ static void carveout_free(struct dma_heap *heap, phys_addr_t addr, unsigned long
 
 	if (addr == DMABUF_CARVEOUT_ALLOCATE_FAIL)
 		return;
+
 	gen_pool_free(free_pool, addr, size);
 }
 
@@ -606,6 +604,7 @@ int dmabuf_debug_carveheap_show_printk(void)
 		total_size += buffer->len;
 	}
 	mutex_unlock(&dev->buffer_lock);
+
 	pr_info("----------------------------------------------------\n");
 	pr_info("%16s %16zu\n", "total ", total_size);
 
@@ -618,8 +617,6 @@ int dmabuf_debug_carveheap_show_printk(void)
 		pool_used) / 1024);
 	pr_info("----------------------------------------------------------\n");
 	pr_info("\n");
-
-	//*total_used += (unsigned long)(total_size + pool_used);
 
 	return 0;
 }
@@ -976,8 +973,10 @@ int sprd_dmabuf_get_phys_addr(int fd, struct dma_buf *dmabuf, unsigned long *phy
 	struct scatterlist *sgl = NULL;
 
 	buffer = get_dmabuf_carvebuffer(fd, dmabuf);
-	if (IS_ERR(buffer))
+	if (IS_ERR(buffer)) {
+		pr_err("%s: failed to get dmabuf\n", __func__);
 		return PTR_ERR(buffer);
+	}
 
 	table = buffer->sg_table;
 	if (table && table->sgl) {
