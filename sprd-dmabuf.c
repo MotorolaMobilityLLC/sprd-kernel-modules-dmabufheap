@@ -34,7 +34,7 @@
 
 static int num_heaps;
 static struct dma_heap *carve_heap;
-static struct gen_pool *carve_mm_pool, *carve_fd_pool, *carve_oem_pool;
+static struct gen_pool *carve_mm_pool, *carve_fd_pool, *carve_oem_pool, *carve_protected_pool;
 static struct dma_heap *carve_uncached_heap;
 
 struct dmabuf_platform_heap {
@@ -499,6 +499,8 @@ static void carveout_free(struct dma_heap *heap, phys_addr_t addr, unsigned long
 		free_pool = carve_fd_pool;
 	else if (!strcmp(heap_name, "uncached_carveout_oem"))
 		free_pool = carve_oem_pool;
+	else if (!strcmp(heap_name, "protected"))
+		free_pool = carve_protected_pool;
 	else {
 		pr_err("%s: unsupported heap %s\n", __func__, heap_name);
 		return;
@@ -560,6 +562,8 @@ static phys_addr_t dmabuf_carveout_allocate(struct dma_heap *heap, unsigned long
 		alloc_pool = carve_fd_pool;
 	else if (!strcmp(heap_name, "uncached_carveout_oem"))
 		alloc_pool = carve_oem_pool;
+	else if (!strcmp(heap_name, "protected"))
+		alloc_pool = carve_protected_pool;
 	else {
 		pr_err("%s: unsupported heap %s\n", __func__, heap_name);
 		return DMABUF_CARVEOUT_ALLOCATE_FAIL;
@@ -816,19 +820,25 @@ static int carveout_heap_create(struct dmabuf_platform_heap *heap_data)
 		if (IS_ERR(carve_heap))
 			return PTR_ERR(carve_heap);
 
-		carve_fd_pool = gen_pool_create(PAGE_SHIFT, -1);
-		if (!carve_fd_pool) {
+		carve_tmp_pool = gen_pool_create(PAGE_SHIFT, -1);
+		if (!carve_tmp_pool) {
 			kfree(carveout_heap);
 			return -ENOMEM;
 		}
 
 		carveout_heap->base = heap_data->base;
-		ret = gen_pool_add(carve_fd_pool, carveout_heap->base, heap_data->size,
+		ret = gen_pool_add(carve_tmp_pool, carveout_heap->base, heap_data->size,
 						-1);
 		if (ret) {
-			gen_pool_destroy(carve_fd_pool);
+			gen_pool_destroy(carve_tmp_pool);
 			return ret;
 		}
+
+		if (!strcmp(heap_data->name, "carveout_fd"))
+			carve_fd_pool = carve_tmp_pool;
+		else if(!strcmp(heap_data->name, "protected"))
+			carve_protected_pool = carve_tmp_pool;
+
 		pr_info("%s: create carveout heap_name:%s, carve_heap_name: %s\n", __func__,
 				heap_data->name, dma_heap_get_name(carve_heap));
 	} else {
