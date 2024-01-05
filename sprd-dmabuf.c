@@ -34,7 +34,7 @@
 
 static int num_heaps;
 static struct dma_heap *carve_heap;
-static struct gen_pool *carve_mm_pool, *carve_fd_pool, *carve_oem_pool, *carve_protected_pool;
+static struct gen_pool *carve_mm_pool, *carve_fd_pool, *carve_oem_pool, *carve_protected_pool, *carve_dispc_pool;
 static struct dma_heap *carve_uncached_heap;
 
 struct dmabuf_platform_heap {
@@ -501,6 +501,8 @@ static void carveout_free(struct dma_heap *heap, phys_addr_t addr, unsigned long
 		free_pool = carve_oem_pool;
 	else if (!strcmp(heap_name, "protected"))
 		free_pool = carve_protected_pool;
+	else if (!strcmp(heap_name, "uncached_carveout_dispc"))
+		free_pool = carve_dispc_pool;
 	else {
 		pr_err("%s: unsupported heap %s\n", __func__, heap_name);
 		return;
@@ -564,6 +566,8 @@ static phys_addr_t dmabuf_carveout_allocate(struct dma_heap *heap, unsigned long
 		alloc_pool = carve_oem_pool;
 	else if (!strcmp(heap_name, "protected"))
 		alloc_pool = carve_protected_pool;
+	else if (!strcmp(heap_name, "uncached_carveout_dispc"))
+		alloc_pool = carve_dispc_pool;
 	else {
 		pr_err("%s: unsupported heap %s\n", __func__, heap_name);
 		return DMABUF_CARVEOUT_ALLOCATE_FAIL;
@@ -791,6 +795,17 @@ static struct dma_heap_ops carveout_uncached_heap_ops = {
 	.allocate = carveout_uncached_heap_not_initialized,
 };
 
+static void carveout_uncached_heap(struct dmabuf_platform_heap *heap_data,
+                                   struct gen_pool *carve_tmp_pool)
+{
+	if (!strcmp(heap_data->name, "uncached_carveout_mm"))
+		carve_mm_pool = carve_tmp_pool;
+	else if (!strcmp(heap_data->name, "uncached_carveout_oem"))
+		carve_oem_pool = carve_tmp_pool;
+	else if (!strcmp(heap_data->name, "uncached_carveout_dispc"))
+		carve_dispc_pool = carve_tmp_pool;
+}
+
 static int carveout_heap_create(struct dmabuf_platform_heap *heap_data)
 {
 	struct carveout_heap_buffer *carveout_heap;
@@ -864,10 +879,7 @@ static int carveout_heap_create(struct dmabuf_platform_heap *heap_data)
 			return ret;
 		}
 
-		if (!strcmp(heap_data->name, "uncached_carveout_mm"))
-			carve_mm_pool = carve_tmp_pool;
-		else
-			carve_oem_pool = carve_tmp_pool;
+		carveout_uncached_heap(heap_data, carve_tmp_pool);
 
 		pr_info("%s: carve_tmp_pool: %p, carve_uncached_heap_name: %s\n", __func__,
 				carve_tmp_pool, dma_heap_get_name(carve_uncached_heap));
